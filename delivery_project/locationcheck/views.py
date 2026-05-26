@@ -1,24 +1,35 @@
 import json
 import math
+
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 
-# Your pickup location coordinates
-# Example: Hyderabad coordinates
-# Replace these with your real pickup/shop/warehouse latitude and longitude
+# Pickup location coordinates
+# Madhapur Metro Station
 PICKUP_LATITUDE = 17.437462
 PICKUP_LONGITUDE = 78.400688
 
 MAX_DELIVERY_DISTANCE_KM = 10
 
 
+@require_GET
+@ensure_csrf_cookie
 def location_page(request):
+    """
+    Shows the first page and sets CSRF cookie.
+    This is important because frontend JavaScript sends POST request later.
+    """
     return render(request, "locationcheck/location.html")
 
 
+@require_GET
 def next_step(request):
+    """
+    Shows next page only if customer location is verified and deliverable.
+    """
     location_allowed = request.session.get("location_allowed", False)
 
     if not location_allowed:
@@ -26,12 +37,17 @@ def next_step(request):
             "error": "Please allow location access first."
         })
 
-    return render(request, "locationcheck/next_step.html")
+    distance_km = request.session.get("distance_km")
+
+    return render(request, "locationcheck/next_step.html", {
+        "distance_km": distance_km
+    })
 
 
 def calculate_distance_km(lat1, lon1, lat2, lon2):
     """
-    Haversine formula to calculate distance between two coordinates.
+    Haversine formula.
+    Calculates distance between pickup location and customer location.
     Returns distance in kilometers.
     """
 
@@ -60,11 +76,25 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
 
 @require_POST
 def check_location(request):
+    """
+    Receives customer latitude and longitude from frontend.
+    Checks whether customer is within 10 km delivery range.
+    """
+
     try:
         data = json.loads(request.body)
 
-        customer_latitude = float(data.get("latitude"))
-        customer_longitude = float(data.get("longitude"))
+        customer_latitude = data.get("latitude")
+        customer_longitude = data.get("longitude")
+
+        if customer_latitude is None or customer_longitude is None:
+            return JsonResponse({
+                "success": False,
+                "message": "Latitude and longitude are required."
+            }, status=400)
+
+        customer_latitude = float(customer_latitude)
+        customer_longitude = float(customer_longitude)
 
         distance_km = calculate_distance_km(
             PICKUP_LATITUDE,
@@ -88,15 +118,29 @@ def check_location(request):
                 "message": "Delivery available to your location."
             })
 
-        else:
-            request.session["location_allowed"] = False
+        request.session["location_allowed"] = False
+        request.session["customer_latitude"] = customer_latitude
+        request.session["customer_longitude"] = customer_longitude
+        request.session["distance_km"] = distance_km
 
-            return JsonResponse({
-                "success": True,
-                "deliverable": False,
-                "distance_km": distance_km,
-                "message": "Sorry, delivery is not available to your location."
-            })
+        return JsonResponse({
+            "success": True,
+            "deliverable": False,
+            "distance_km": distance_km,
+            "message": "Sorry, delivery is not available to your location."
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            "success": False,
+            "message": "Invalid JSON data."
+        }, status=400)
+
+    except ValueError:
+        return JsonResponse({
+            "success": False,
+            "message": "Invalid latitude or longitude."
+        }, status=400)
 
     except Exception as error:
         return JsonResponse({

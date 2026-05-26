@@ -49,10 +49,16 @@
             background: #000;
         }
 
+        button:disabled {
+            background: #777;
+            cursor: not-allowed;
+        }
+
         .message {
             margin-top: 20px;
             font-size: 16px;
             font-weight: bold;
+            line-height: 1.5;
         }
 
         .success {
@@ -70,6 +76,11 @@
 </head>
 <body>
 
+<!-- Django CSRF token -->
+<form style="display: none;">
+    {% csrf_token %}
+</form>
+
 <div class="container">
     <h1>Check Delivery Availability</h1>
 
@@ -78,7 +89,13 @@
         We will check whether your location is within our 10 km delivery range.
     </p>
 
-    <button onclick="getCustomerLocation()">Allow Location Access</button>
+    <button id="locationButton" onclick="getCustomerLocation()">
+        Allow Location Access
+    </button>
+
+    {% if error %}
+        <div class="message error">{{ error }}</div>
+    {% endif %}
 
     <div id="message" class="message"></div>
 </div>
@@ -103,10 +120,22 @@
         return cookieValue;
     }
 
-    const csrftoken = getCookie('csrftoken');
+    function getCSRFToken() {
+        let token = getCookie('csrftoken');
+
+        if (!token) {
+            const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfInput) {
+                token = csrfInput.value;
+            }
+        }
+
+        return token;
+    }
 
     function getCustomerLocation() {
         const messageBox = document.getElementById("message");
+        const locationButton = document.getElementById("locationButton");
 
         if (!navigator.geolocation) {
             messageBox.innerHTML = "Your browser does not support location access.";
@@ -116,6 +145,8 @@
 
         messageBox.innerHTML = "Getting your location...";
         messageBox.className = "message loading";
+        locationButton.disabled = true;
+        locationButton.innerHTML = "Checking Location...";
 
         navigator.geolocation.getCurrentPosition(
             function(position) {
@@ -137,6 +168,8 @@
                 }
 
                 messageBox.className = "message error";
+                locationButton.disabled = false;
+                locationButton.innerHTML = "Allow Location Access";
             },
 
             {
@@ -149,6 +182,16 @@
 
     function checkLocationWithBackend(latitude, longitude) {
         const messageBox = document.getElementById("message");
+        const locationButton = document.getElementById("locationButton");
+        const csrftoken = getCSRFToken();
+
+        if (!csrftoken) {
+            messageBox.innerHTML = "CSRF token missing. Please refresh the page and try again.";
+            messageBox.className = "message error";
+            locationButton.disabled = false;
+            locationButton.innerHTML = "Allow Location Access";
+            return;
+        }
 
         fetch("/check-location/", {
             method: "POST",
@@ -162,7 +205,13 @@
                 longitude: longitude
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Server error: " + response.status);
+            }
+
+            return response.json();
+        })
         .then(data => {
             if (data.success && data.deliverable) {
                 messageBox.innerHTML =
@@ -176,11 +225,19 @@
                 messageBox.innerHTML =
                     data.message + "<br>Distance: " + data.distance_km + " km";
                 messageBox.className = "message error";
+
+                locationButton.disabled = false;
+                locationButton.innerHTML = "Try Again";
             }
         })
         .catch(error => {
-            messageBox.innerHTML = "Something went wrong. Please try again.";
+            messageBox.innerHTML = "Something went wrong. Please refresh and try again.";
             messageBox.className = "message error";
+
+            locationButton.disabled = false;
+            locationButton.innerHTML = "Try Again";
+
+            console.log(error);
         });
     }
 </script>
