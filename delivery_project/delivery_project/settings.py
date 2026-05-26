@@ -26,7 +26,9 @@ SECRET_KEY = 'django-insecure-+xt=twt821=zrgum!*l68ke0o0lidvs!4!(p&689uxlrv$pwf@
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["https://rdop-1.onrender.com"]
+ALLOWED_HOSTS = ["127.0.0.1",
+    "localhost",
+    "rdop-1.onrender.com",]
 
 
 # Application definition
@@ -131,3 +133,6 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+CSRF_TRUSTED_ORIGINS = [
+    "https://rdop-1.onrender.com",
+]
